@@ -32,18 +32,6 @@
         </dependency>
     </dependencies>
 
-package test.solutions;
-
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import test.models.Category;
-import test.models.Question;
-import test.models.Quiz;
-
-import java.io.FileReader;
-import java.util.ArrayList;
-import java.util.List;
 
 public class QuizStreamingParser {
 
@@ -149,18 +137,6 @@ public class QuizStreamingParser {
     }
 }
 
-package test.solutions;
-
-import jakarta.json.*;
-import test.models.Category;
-import test.models.Question;
-import test.models.Quiz;
-
-import java.io.FileReader;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-
 public class QuizParser {
 
     public static List<Quiz> listQuizzes(String filePath, String categoryId) {
@@ -242,5 +218,32 @@ public class QuizParser {
         }
 
         return result;
+    }
+}
+
+public class Main {
+
+    public static void main(String[] args) {
+
+        String inputFile = "src/assets/json/quiz.json";
+        String categoryId = "C001";
+
+        List<Quiz> quizzes = QuizParser.listQuizzes(inputFile, categoryId);
+
+        // PRINT
+        System.out.println(quizzes);
+
+        // WRITE FILE
+        try (BufferedWriter writer = Files.newBufferedWriter(
+                Path.of("src/main/java/test/output/YourName_YourID.txt"))) {
+
+            for (Quiz quiz : quizzes) {
+                writer.write(quiz.toString());
+                writer.newLine();
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
