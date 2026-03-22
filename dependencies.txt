@@ -30,8 +30,25 @@
             <artifactId>jackson-core</artifactId>
             <version>2.17.2</version>
         </dependency>
+	
+	<dependency>
+    		<groupId>org.glassfish</groupId>
+    		<artifactId>javax.json</artifactId>
+    		<version>1.1.4</version>
+	</dependency>
     </dependencies>
 
+package test.solutions;
+
+import javax.json.Json;
+import javax.json.stream.JsonParser;
+import test.models.Category;
+import test.models.Question;
+import test.models.Quiz;
+
+import java.io.FileReader;
+import java.util.ArrayList;
+import java.util.List;
 
 public class QuizStreamingParser {
 
@@ -39,93 +56,96 @@ public class QuizStreamingParser {
 
         List<Quiz> result = new ArrayList<>();
 
-        try (JsonParser jsonParser =
-                     new JsonFactory().createParser(new FileReader(filePath))) {
+        try (JsonParser parser = Json.createParser(new FileReader(filePath))) {
 
             Quiz quiz = null;
             Category category = null;
             List<Question> questionList = null;
+            Question question = null;
+            List<String> optionList = null;
 
-            while (jsonParser.nextToken() != null) {
+            String currentKey = null;
 
-                if (jsonParser.currentToken() != JsonToken.FIELD_NAME) continue;
+            while (parser.hasNext()) {
 
-                String fieldName = jsonParser.getCurrentName();
-                jsonParser.nextToken();
+                JsonParser.Event event = parser.next();
 
-                switch (fieldName) {
+                switch (event) {
 
-                    case "quiz_id" -> {
-                        quiz = new Quiz();
-                        quiz.setQuizId(jsonParser.getValueAsString());
-                    }
-
-                    case "name" -> {
-                        if (quiz != null && quiz.getName() == null) {
-                            quiz.setName(jsonParser.getValueAsString());
-                        } else if (category != null) {
-                            category.setName(jsonParser.getValueAsString());
+                    case START_OBJECT -> {
+                        if (quiz == null) {
+                            quiz = new Quiz();
+                        } else if (questionList != null && question == null) {
+                            question = new Question();
                         }
                     }
 
-                    case "score" -> quiz.setScore(jsonParser.getValueAsInt());
+                    case KEY_NAME -> currentKey = parser.getString();
 
-                    case "category" -> {
-                        category = new Category();
-
-                        while (jsonParser.nextToken() != JsonToken.END_OBJECT) {
-                            if (jsonParser.currentToken() != JsonToken.FIELD_NAME) continue;
-
-                            String categoryField = jsonParser.getCurrentName();
-                            jsonParser.nextToken();
-
-                            if (categoryField.equals("category_id")) {
-                                category.setCategoryId(jsonParser.getValueAsString());
-                            } else if (categoryField.equals("name")) {
-                                category.setName(jsonParser.getValueAsString());
-                            }
-                        }
-                        quiz.setCategory(category);
-                    }
-
-                    case "questions" -> {
-                        questionList = new ArrayList<>();
-
-                        while (jsonParser.nextToken() != JsonToken.END_ARRAY) {
-
-                            Question question = new Question();
-                            List<String> optionList = new ArrayList<>();
-
-                            while (jsonParser.nextToken() != JsonToken.END_OBJECT) {
-
-                                if (jsonParser.currentToken() != JsonToken.FIELD_NAME) continue;
-
-                                String questionField = jsonParser.getCurrentName();
-                                jsonParser.nextToken();
-
-                                if (questionField.equals("question_id")) {
-                                    question.setQuestionId(jsonParser.getValueAsString());
-                                } else if (questionField.equals("text")) {
-                                    question.setText(jsonParser.getValueAsString());
-                                } else if (questionField.equals("correct_answer")) {
-                                    question.setCorrectAnswer(jsonParser.getValueAsString());
-                                } else if (questionField.equals("options")) {
-                                    while (jsonParser.nextToken() != JsonToken.END_ARRAY) {
-                                        optionList.add(jsonParser.getValueAsString());
-                                    }
-                                    question.setOptions(optionList);
+                    case VALUE_STRING -> {
+                        switch (currentKey) {
+                            case "quiz_id" -> quiz.setQuizId(parser.getString());
+                            case "name" -> {
+                                if (question != null) {
+                                    question.setText(parser.getString());
+                                } else if (category != null && category.getName() == null) {
+                                    category.setName(parser.getString());
+                                } else {
+                                    quiz.setName(parser.getString());
                                 }
                             }
-                            questionList.add(question);
-                        }
-
-                        quiz.setQuestions(questionList);
-
-                        if (quiz.getCategory() != null &&
-                                quiz.getCategory().getCategoryId().equals(categoryFilterId)) {
-                            result.add(quiz);
+                            case "category_id" -> category.setCategoryId(parser.getString());
+                            case "question_id" -> question.setQuestionId(parser.getString());
+                            case "correct_answer" -> question.setCorrectAnswer(parser.getString());
+                            case "options" -> optionList.add(parser.getString());
                         }
                     }
+
+                    case VALUE_NUMBER -> {
+                        if ("score".equals(currentKey)) {
+                            quiz.setScore(Integer.parseInt(parser.getString()));
+                        }
+                    }
+
+                    case START_ARRAY -> {
+                        if ("questions".equals(currentKey)) {
+                            questionList = new ArrayList<>();
+                        } else if ("options".equals(currentKey)) {
+                            optionList = new ArrayList<>();
+                        }
+                    }
+
+                    case END_ARRAY -> {
+                        if (optionList != null && question != null) {
+                            question.setOptions(optionList);
+                            optionList = null;
+                        } else if (questionList != null) {
+                            quiz.setQuestions(questionList);
+
+                            if (quiz.getCategory() != null &&
+                                quiz.getCategory().getCategoryId().equals(categoryFilterId)) {
+                                result.add(quiz);
+                            }
+                        }
+                    }
+
+                    case END_OBJECT -> {
+                        if (question != null) {
+                            questionList.add(question);
+                            question = null;
+                        } else if (category != null) {
+                            quiz.setCategory(category);
+                        } else {
+                            quiz = null;
+                        }
+                    }
+
+                    default -> {}
+                }
+
+                // detect category object start
+                if ("category".equals(currentKey) && event == JsonParser.Event.START_OBJECT) {
+                    category = new Category();
                 }
             }
 
