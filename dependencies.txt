@@ -1,0 +1,246 @@
+    <dependencies>
+        <!-- Source: https://mvnrepository.com/artifact/jakarta.json/jakarta.json-api -->
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+            <version>2.1.3</version>
+        </dependency>
+        <!-- Source: https://mvnrepository.com/artifact/org.projectlombok/lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.42</version>
+        </dependency>
+        <!-- Source: https://mvnrepository.com/artifact/org.eclipse.parsson/parsson -->
+        <dependency>
+            <groupId>org.eclipse.parsson</groupId>
+            <artifactId>parsson</artifactId>
+            <version>1.1.7</version>
+        </dependency>
+        <!-- Source: https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-databind -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.17.2</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>2.17.2</version>
+        </dependency>
+    </dependencies>
+
+package test.solutions;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import test.models.Category;
+import test.models.Question;
+import test.models.Quiz;
+
+import java.io.FileReader;
+import java.util.ArrayList;
+import java.util.List;
+
+public class QuizStreamingParser {
+
+    public static List<Quiz> listQuizzes(String filePath, String categoryFilterId) {
+
+        List<Quiz> result = new ArrayList<>();
+
+        try (JsonParser jsonParser =
+                     new JsonFactory().createParser(new FileReader(filePath))) {
+
+            Quiz quiz = null;
+            Category category = null;
+            List<Question> questionList = null;
+
+            while (jsonParser.nextToken() != null) {
+
+                if (jsonParser.currentToken() != JsonToken.FIELD_NAME) continue;
+
+                String fieldName = jsonParser.getCurrentName();
+                jsonParser.nextToken();
+
+                switch (fieldName) {
+
+                    case "quiz_id" -> {
+                        quiz = new Quiz();
+                        quiz.setQuizId(jsonParser.getValueAsString());
+                    }
+
+                    case "name" -> {
+                        if (quiz != null && quiz.getName() == null) {
+                            quiz.setName(jsonParser.getValueAsString());
+                        } else if (category != null) {
+                            category.setName(jsonParser.getValueAsString());
+                        }
+                    }
+
+                    case "score" -> quiz.setScore(jsonParser.getValueAsInt());
+
+                    case "category" -> {
+                        category = new Category();
+
+                        while (jsonParser.nextToken() != JsonToken.END_OBJECT) {
+                            if (jsonParser.currentToken() != JsonToken.FIELD_NAME) continue;
+
+                            String categoryField = jsonParser.getCurrentName();
+                            jsonParser.nextToken();
+
+                            if (categoryField.equals("category_id")) {
+                                category.setCategoryId(jsonParser.getValueAsString());
+                            } else if (categoryField.equals("name")) {
+                                category.setName(jsonParser.getValueAsString());
+                            }
+                        }
+                        quiz.setCategory(category);
+                    }
+
+                    case "questions" -> {
+                        questionList = new ArrayList<>();
+
+                        while (jsonParser.nextToken() != JsonToken.END_ARRAY) {
+
+                            Question question = new Question();
+                            List<String> optionList = new ArrayList<>();
+
+                            while (jsonParser.nextToken() != JsonToken.END_OBJECT) {
+
+                                if (jsonParser.currentToken() != JsonToken.FIELD_NAME) continue;
+
+                                String questionField = jsonParser.getCurrentName();
+                                jsonParser.nextToken();
+
+                                if (questionField.equals("question_id")) {
+                                    question.setQuestionId(jsonParser.getValueAsString());
+                                } else if (questionField.equals("text")) {
+                                    question.setText(jsonParser.getValueAsString());
+                                } else if (questionField.equals("correct_answer")) {
+                                    question.setCorrectAnswer(jsonParser.getValueAsString());
+                                } else if (questionField.equals("options")) {
+                                    while (jsonParser.nextToken() != JsonToken.END_ARRAY) {
+                                        optionList.add(jsonParser.getValueAsString());
+                                    }
+                                    question.setOptions(optionList);
+                                }
+                            }
+                            questionList.add(question);
+                        }
+
+                        quiz.setQuestions(questionList);
+
+                        if (quiz.getCategory() != null &&
+                                quiz.getCategory().getCategoryId().equals(categoryFilterId)) {
+                            result.add(quiz);
+                        }
+                    }
+                }
+            }
+
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
+        }
+
+        return result;
+    }
+}
+
+package test.solutions;
+
+import jakarta.json.*;
+import test.models.Category;
+import test.models.Question;
+import test.models.Quiz;
+
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class QuizParser {
+
+    public static List<Quiz> listQuizzes(String filePath, String categoryId) {
+
+        List<Quiz> result = new ArrayList<>();
+
+        try (
+                FileReader fileReader = new FileReader(filePath);
+                JsonReader jsonReader = Json.createReader(fileReader);
+        ) {
+
+            JsonArray quizArray = jsonReader.readArray();
+
+            for (JsonValue quizValue : quizArray) {
+
+                JsonObject quizObject = quizValue.asJsonObject();
+
+                String quizId = quizObject.getString("quiz_id");
+                String name = quizObject.getString("name");
+                int score = quizObject.getInt("score");
+
+                // CATEGORY
+                JsonObject categoryObject = quizObject.getJsonObject("category");
+                String categoryIdFromJson = categoryObject.getString("category_id");
+                String categoryName = categoryObject.getString("name");
+
+                Category category = Category.builder()
+                        .categoryId(categoryIdFromJson)
+                        .name(categoryName)
+                        .build();
+
+                // QUESTIONS
+                List<Question> questionList = new ArrayList<>();
+                JsonArray questionArray = quizObject.getJsonArray("questions");
+
+                for (JsonValue questionValue : questionArray) {
+
+                    JsonObject questionObject = questionValue.asJsonObject();
+
+                    String questionId = questionObject.getString("question_id");
+                    String text = questionObject.getString("text");
+
+                    // OPTIONS
+                    List<String> optionList = new ArrayList<>();
+                    JsonArray optionArray = questionObject.getJsonArray("options");
+
+                    for (int i = 0; i < optionArray.size(); i++) {
+                        optionList.add(optionArray.getString(i));
+                    }
+
+                    String correctAnswer = questionObject.getString("correct_answer");
+
+                    Question question = Question.builder()
+                            .questionId(questionId)
+                            .text(text)
+                            .options(optionList)
+                            .correctAnswer(correctAnswer)
+                            .build();
+
+                    questionList.add(question);
+                }
+
+                Quiz quiz = Quiz.builder()
+                        .quizId(quizId)
+                        .name(name)
+                        .score(score)
+                        .questions(questionList)
+                        .category(category)
+                        .build();
+
+                // FILTER here (as required)
+                if (categoryIdFromJson.equals(categoryId)) {
+                    result.add(quiz);
+                }
+            }
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        return result;
+    }
+}
